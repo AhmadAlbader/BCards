@@ -1,0 +1,41 @@
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "digital-cards-backend"
+version = "1.0.0"
+description = "Multi-tenant Digital Business Cards SaaS Backend"
+authors = ["Your Name <you@example.com>"]
+readme = "README.md"
+packages = [{include = "backend"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.104.0"
+uvicorn = {version = "^0.24.0", extras = ["standard"]}
+sqlalchemy = "^2.0.0"
+asyncpg = "^0.29.0"
+pydantic = "^2.0.0"
+pydantic-settings = "^2.0.0"
+pydantic-extra-types = "^2.0.0"
+python-dotenv = "^1.0.0"
+python-jose = {version = "^3.3.0", extras = ["cryptography"]}
+passlib = {version = "^1.7.4", extras = ["bcrypt"]}
+python-multipart = "^0.0.6"
+email-validator = "^2.1.0"
+python-slugify = "^8.0.0"
+httpx = "^0.25.0"
+alembic = "^1.13.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-asyncio = "^0.21.0"
+pytest-cov = "^4.1.0"
+black = "^23.12.0"
+ruff = "^0.1.0"
+mypy = "^1.7.0"
+
+[[tool.poetry.source]]
+name = "PyPI"
+priority = "primary"
