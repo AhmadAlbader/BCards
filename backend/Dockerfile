@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
-COPY pyproject.toml* ./
+COPY backend/pyproject.toml* ./
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
@@ -32,7 +32,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
         stripe==7.8.0
 
 # Copy application code
-COPY . ./
+COPY backend/ ./
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
