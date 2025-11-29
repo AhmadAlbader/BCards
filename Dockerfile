@@ -50,7 +50,6 @@ COPY backend/ ./backend/
 
 # Copy Frontend build from stage 1
 COPY --from=frontend-builder /frontend/.next ./frontend/.next
-COPY --from=frontend-builder /frontend/public ./frontend/public
 COPY --from=frontend-builder /frontend/node_modules ./frontend/node_modules
 COPY --from=frontend-builder /frontend/package.json ./frontend/package.json
 COPY --from=frontend-builder /frontend/next.config.js ./frontend/next.config.js
