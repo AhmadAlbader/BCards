@@ -1,0 +1,11 @@
+# Railway Configuration for BCards Frontend Service
+# This file tells Railway to use Docker for building
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "frontend/Dockerfile"
+
+[deploy]
+startCommand = "npm start"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
