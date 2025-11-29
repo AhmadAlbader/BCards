@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 function getBackendUrl(): string {
-  const apiHost = process.env.NEXT_PUBLIC_API_HOST || process.env.API_HOST || 'localhost';
+  const apiHost = process.env.NEXT_PUBLIC_API_HOST || process.env.API_HOST || '127.0.0.1';
   const apiPort = process.env.NEXT_PUBLIC_API_PORT || process.env.API_PORT || '8000';
   return `http://${apiHost}:${apiPort}/api`;
 }
