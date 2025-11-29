@@ -1,0 +1,8 @@
+# Nixpacks configuration - tells Railway this is NOT a Nixpacks project
+# Force Railway to use Dockerfile instead
+
+[phases.build]
+cmds = ["echo 'Use Dockerfile instead'"]
+
+[phases.start]
+cmd = "echo 'This should use Dockerfile - check Railway Settings'"
