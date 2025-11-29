@@ -121,7 +121,12 @@ export default function AdminDashboardPage() {
         whatsapp: employee.whatsapp || '',
         bio: employee.bio || '',
         photo_url: employee.photo_url || '',
-        social_links: employee.social_links || emptyEmployee.social_links,
+        social_links: employee.social_links ? {
+          instagram: (employee.social_links as any).instagram || '',
+          linkedin: (employee.social_links as any).linkedin || '',
+          facebook: (employee.social_links as any).facebook || '',
+          youtube: (employee.social_links as any).youtube || '',
+        } : emptyEmployee.social_links,
       });
     } else {
       setEditingId(null);
