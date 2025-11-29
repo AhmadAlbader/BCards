@@ -612,3 +612,411 @@ async def get_qr_vcard(
     
     # Redirect to QR Server API to get the image
     return RedirectResponse(url=qr_image_url)
+
+
+# ========== Subscription & Payment Routes ==========
+
+@router.get("/subscriptions/plans")
+async def get_subscription_plans():
+    """Get all available subscription plans with pricing"""
+    from subscription_config import (
+        PLAN_FREE, PLAN_PROFESSIONAL, PLAN_ENTERPRISE,
+        PLAN_PRICES_USD, PLAN_PRICES_KWD,
+        PLAN_FEATURES, TRIAL_DAYS, CURRENCY_SYMBOLS
+    )
+    
+    plans = [
+        {
+            "id": PLAN_FREE,
+            "name": "Free",
+            "description": "Perfect for getting started",
+            "features": PLAN_FEATURES[PLAN_FREE],
+            "pricing": {
+                "USD": {
+                    "monthly": 0,
+                    "yearly": 0,
+                    "symbol": CURRENCY_SYMBOLS["USD"],
+                },
+                "KWD": {
+                    "monthly": 0,
+                    "yearly": 0,
+                    "symbol": CURRENCY_SYMBOLS["KWD"],
+                },
+            },
+            "trial_days": 0,
+        },
+        {
+            "id": PLAN_PROFESSIONAL,
+            "name": "Professional",
+            "description": "For growing teams",
+            "features": PLAN_FEATURES[PLAN_PROFESSIONAL],
+            "pricing": {
+                "USD": {
+                    "monthly": PLAN_PRICES_USD[PLAN_PROFESSIONAL]["monthly"],
+                    "yearly": PLAN_PRICES_USD[PLAN_PROFESSIONAL]["yearly"],
+                    "symbol": CURRENCY_SYMBOLS["USD"],
+                },
+                "KWD": {
+                    "monthly": PLAN_PRICES_KWD[PLAN_PROFESSIONAL]["monthly"],
+                    "yearly": PLAN_PRICES_KWD[PLAN_PROFESSIONAL]["yearly"],
+                    "symbol": CURRENCY_SYMBOLS["KWD"],
+                },
+            },
+            "trial_days": TRIAL_DAYS,
+        },
+        {
+            "id": PLAN_ENTERPRISE,
+            "name": "Enterprise",
+            "description": "For large organizations",
+            "features": PLAN_FEATURES[PLAN_ENTERPRISE],
+            "pricing": {
+                "USD": {
+                    "monthly": PLAN_PRICES_USD[PLAN_ENTERPRISE]["monthly"],
+                    "yearly": PLAN_PRICES_USD[PLAN_ENTERPRISE]["yearly"],
+                    "symbol": CURRENCY_SYMBOLS["USD"],
+                },
+                "KWD": {
+                    "monthly": PLAN_PRICES_KWD[PLAN_ENTERPRISE]["monthly"],
+                    "yearly": PLAN_PRICES_KWD[PLAN_ENTERPRISE]["yearly"],
+                    "symbol": CURRENCY_SYMBOLS["KWD"],
+                },
+            },
+            "trial_days": TRIAL_DAYS,
+        },
+    ]
+    
+    return {"plans": plans}
+
+
+@router.get("/subscriptions/current")
+async def get_current_subscription(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get current subscription for authenticated user's company"""
+    company_id = current_user["company_id"]
+    
+    if not company_id:
+        raise HTTPException(status_code=404, detail="Company not found")
+    
+    from subscription_service import get_active_subscription, check_employee_limit
+    
+    subscription = await get_active_subscription(db, company_id)
+    
+    if not subscription:
+        raise HTTPException(status_code=404, detail="No subscription found")
+    
+    # Get employee limits
+    limit_info = await check_employee_limit(db, company_id)
+    
+    return {
+        "id": subscription.id,
+        "plan": subscription.plan,
+        "status": subscription.status,
+        "billing_cycle": subscription.billing_cycle,
+        "currency": subscription.currency,
+        "amount": float(subscription.amount) if subscription.amount else 0,
+        "current_period_start": subscription.current_period_start,
+        "current_period_end": subscription.current_period_end,
+        "cancel_at": subscription.cancel_at,
+        "trial_end": subscription.trial_end,
+        "employee_count": limit_info["current"],
+        "employee_limit": limit_info["limit"],
+        "can_add_employee": limit_info["can_add"],
+    }
+
+
+@router.post("/subscriptions/create-checkout")
+async def create_checkout_session(
+    checkout_data: dict = Body(...),
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create Stripe checkout session for subscription"""
+    company_id = current_user["company_id"]
+    plan = checkout_data.get("plan")
+    billing_cycle = checkout_data.get("billing_cycle", "monthly")
+    currency = checkout_data.get("currency", "USD")
+    
+    if not company_id:
+        raise HTTPException(status_code=400, detail="Company not found")
+    
+    if plan not in ["professional", "enterprise"]:
+        raise HTTPException(status_code=400, detail="Invalid plan")
+    
+    # Get company
+    company = await services.get_company_by_id(db, company_id)
+    
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+    
+    # Get or create Stripe customer
+    from subscription_service import get_active_subscription
+    from stripe_service import StripeService
+    from subscription_config import STRIPE_PRICE_IDS, TRIAL_DAYS
+    
+    subscription = await get_active_subscription(db, company_id)
+    stripe_service = StripeService()
+    
+    if subscription and subscription.stripe_customer_id:
+        customer_id = subscription.stripe_customer_id
+    else:
+        # Create new customer
+        user = current_user["user"]
+        customer = await stripe_service.create_customer(
+            email=user.email,
+            company_name=company.name,
+            company_id=str(company_id),
+        )
+        customer_id = customer.id
+    
+    # Get price ID
+    price_key = f"{plan}_{billing_cycle}"
+    price_id = STRIPE_PRICE_IDS.get(currency, {}).get(price_key)
+    
+    if not price_id:
+        raise HTTPException(status_code=400, detail="Price not found for this plan")
+    
+    # Create checkout session
+    success_url = checkout_data.get("success_url", f"{os.getenv('FRONTEND_HOST')}/company-admin/subscription/success")
+    cancel_url = checkout_data.get("cancel_url", f"{os.getenv('FRONTEND_HOST')}/company-admin/subscription/cancel")
+    
+    session = await stripe_service.create_checkout_session(
+        customer_id=customer_id,
+        price_id=price_id,
+        success_url=success_url,
+        cancel_url=cancel_url,
+        trial_days=TRIAL_DAYS,
+        metadata={
+            "company_id": str(company_id),
+            "plan": plan,
+            "billing_cycle": billing_cycle,
+        }
+    )
+    
+    return {
+        "checkout_url": session.url,
+        "session_id": session.id,
+    }
+
+
+@router.post("/subscriptions/cancel")
+async def cancel_subscription_endpoint(
+    cancel_data: dict = Body(...),
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cancel subscription"""
+    company_id = current_user["company_id"]
+    at_period_end = cancel_data.get("at_period_end", True)
+    
+    if not company_id:
+        raise HTTPException(status_code=400, detail="Company not found")
+    
+    if current_user["role"] not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Only admins can cancel subscriptions")
+    
+    from subscription_service import cancel_subscription
+    
+    try:
+        subscription = await cancel_subscription(db, company_id, at_period_end)
+        
+        return {
+            "message": "Subscription canceled successfully",
+            "subscription": {
+                "plan": subscription.plan,
+                "status": subscription.status,
+                "cancel_at": subscription.cancel_at,
+            }
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/subscriptions/portal")
+async def create_portal_session(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create Stripe customer portal session"""
+    company_id = current_user["company_id"]
+    
+    if not company_id:
+        raise HTTPException(status_code=400, detail="Company not found")
+    
+    from subscription_service import get_active_subscription
+    from stripe_service import StripeService
+    
+    subscription = await get_active_subscription(db, company_id)
+    
+    if not subscription or not subscription.stripe_customer_id:
+        raise HTTPException(status_code=404, detail="No active subscription found")
+    
+    stripe_service = StripeService()
+    return_url = f"{os.getenv('FRONTEND_HOST')}/company-admin/subscription"
+    
+    portal_session = await stripe_service.create_portal_session(
+        customer_id=subscription.stripe_customer_id,
+        return_url=return_url,
+    )
+    
+    return {
+        "portal_url": portal_session.url,
+    }
+
+
+@router.get("/subscriptions/invoices")
+async def get_invoices(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get invoices for company"""
+    company_id = current_user["company_id"]
+    
+    if not company_id:
+        raise HTTPException(status_code=400, detail="Company not found")
+    
+    from subscription_service import list_invoices
+    
+    invoices = await list_invoices(db, company_id, limit=20)
+    
+    return {
+        "invoices": [
+            {
+                "id": inv.id,
+                "amount": float(inv.amount),
+                "currency": inv.currency,
+                "status": inv.status,
+                "paid_at": inv.paid_at,
+                "invoice_pdf_url": inv.invoice_pdf_url,
+                "hosted_invoice_url": inv.hosted_invoice_url,
+                "created_at": inv.created_at,
+            }
+            for inv in invoices
+        ]
+    }
+
+
+@router.post("/webhooks/stripe", include_in_schema=False)
+async def stripe_webhook(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Handle Stripe webhooks"""
+    payload = await request.body()
+    signature = request.headers.get("stripe-signature")
+    
+    if not signature:
+        raise HTTPException(status_code=400, detail="Missing signature")
+    
+    from stripe_service import StripeService
+    from subscription_service import create_paid_subscription, create_invoice_record
+    
+    try:
+        # Verify webhook signature
+        event = StripeService.verify_webhook_signature(payload, signature)
+        
+        # Handle different event types
+        if event["type"] == "checkout.session.completed":
+            # Subscription created successfully
+            session = event["data"]["object"]
+            metadata = session.get("metadata", {})
+            company_id = uuid.UUID(metadata.get("company_id"))
+            plan = metadata.get("plan")
+            billing_cycle = metadata.get("billing_cycle")
+            
+            # Get subscription details from Stripe
+            subscription_id = session.get("subscription")
+            stripe_service = StripeService()
+            stripe_subscription = await stripe_service.get_subscription(subscription_id)
+            
+            # Create subscription in database
+            await create_paid_subscription(
+                db,
+                company_id=company_id,
+                plan=plan,
+                billing_cycle=billing_cycle,
+                stripe_customer_id=session.get("customer"),
+                stripe_subscription_id=subscription_id,
+                stripe_price_id=stripe_subscription["items"]["data"][0]["price"]["id"],
+                currency=session.get("currency", "usd").upper(),
+                amount=session.get("amount_total", 0) / 100,
+            )
+        
+        elif event["type"] == "invoice.paid":
+            # Invoice paid successfully
+            invoice = event["data"]["object"]
+            customer_id = invoice.get("customer")
+            
+            # Find subscription by Stripe customer ID
+            result = await db.execute(
+                select(db.Subscription)
+                .where(db.Subscription.stripe_customer_id == customer_id)
+                .where(db.Subscription.status.in_(["active", "trialing"]))
+            )
+            subscription = result.scalar_one_or_none()
+            
+            if subscription:
+                # Create invoice record
+                await create_invoice_record(
+                    db,
+                    company_id=subscription.company_id,
+                    subscription_id=subscription.id,
+                    stripe_invoice_id=invoice.get("id"),
+                    amount=invoice.get("amount_paid", 0) / 100,
+                    currency=invoice.get("currency", "usd").upper(),
+                    status="paid",
+                    invoice_pdf_url=invoice.get("invoice_pdf"),
+                    hosted_invoice_url=invoice.get("hosted_invoice_url"),
+                    paid_at=datetime.fromtimestamp(invoice.get("status_transitions", {}).get("paid_at", 0)),
+                )
+        
+        elif event["type"] == "customer.subscription.updated":
+            # Subscription updated (renewed, upgraded, etc.)
+            subscription = event["data"]["object"]
+            stripe_subscription_id = subscription.get("id")
+            
+            # Update subscription in database
+            result = await db.execute(
+                select(db.Subscription)
+                .where(db.Subscription.stripe_subscription_id == stripe_subscription_id)
+            )
+            db_subscription = result.scalar_one_or_none()
+            
+            if db_subscription:
+                db_subscription.status = subscription.get("status")
+                db_subscription.current_period_start = datetime.fromtimestamp(subscription.get("current_period_start"))
+                db_subscription.current_period_end = datetime.fromtimestamp(subscription.get("current_period_end"))
+                
+                if subscription.get("cancel_at"):
+                    db_subscription.cancel_at = datetime.fromtimestamp(subscription.get("cancel_at"))
+                
+                await db.commit()
+        
+        elif event["type"] == "customer.subscription.deleted":
+            # Subscription canceled/expired
+            subscription = event["data"]["object"]
+            stripe_subscription_id = subscription.get("id")
+            
+            # Update subscription in database
+            result = await db.execute(
+                select(db.Subscription)
+                .where(db.Subscription.stripe_subscription_id == stripe_subscription_id)
+            )
+            db_subscription = result.scalar_one_or_none()
+            
+            if db_subscription:
+                db_subscription.status = "canceled"
+                db_subscription.active = False
+                db_subscription.ended_at = datetime.utcnow()
+                db_subscription.plan = "free"  # Downgrade to free
+                
+                await db.commit()
+        
+        return {"status": "success"}
+    
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"Webhook error: {e}")
+        raise HTTPException(status_code=500, detail="Webhook processing failed")

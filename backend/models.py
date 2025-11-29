@@ -116,8 +116,46 @@ class SubscriptionResponse(BaseModel):
     id: uuid.UUID
     company_id: uuid.UUID
     plan: str
+    billing_cycle: Optional[str]
+    status: str
     active: bool
+    currency: Optional[str]
+    amount: Optional[float]
+    trial_end: Optional[datetime.datetime]
+    current_period_start: Optional[datetime.datetime]
+    current_period_end: Optional[datetime.datetime]
+    cancel_at: Optional[datetime.datetime]
     started_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+
+class SubscriptionCreate(BaseModel):
+    plan: str
+    billing_cycle: str = "monthly"  # monthly | yearly
+    currency: str = "USD"
+
+
+class CheckoutSessionCreate(BaseModel):
+    plan: str
+    billing_cycle: str = "monthly"
+    currency: str = "USD"
+    success_url: Optional[str] = None
+    cancel_url: Optional[str] = None
+
+
+class InvoiceResponse(BaseModel):
+    id: uuid.UUID
+    company_id: uuid.UUID
+    subscription_id: Optional[uuid.UUID]
+    amount: float
+    currency: str
+    status: str
+    invoice_pdf_url: Optional[str]
+    hosted_invoice_url: Optional[str]
+    paid_at: Optional[datetime.datetime]
+    created_at: datetime.datetime
 
     class Config:
         from_attributes = True

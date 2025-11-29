@@ -1,0 +1,54 @@
+# Railway Deployment - Ignore Files
+
+# Local development
+.env
+.env.local
+.env.development
+
+# Documentation (not needed in production)
+*.md
+!README.md
+
+# Test files
+test_*.py
+*_test.py
+tests/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node modules (will be installed on Railway)
+node_modules/
+
+# Build artifacts
+.next/
+build/
+dist/
+*.egg-info/
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Scripts
+setup-local.sh
+migrate_subscriptions.py
+seed_test_data.py
+final_verification.py
+quick-start.sh

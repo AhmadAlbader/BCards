@@ -34,6 +34,14 @@ interface EmployeeFormState {
   };
 }
 
+interface Subscription {
+  plan_name: string;
+  status: string;
+  employee_limit: number;
+  current_employee_count: number;
+  trial_end?: string;
+}
+
 const emptyEmployee: EmployeeFormState = {
   full_name: '',
   job_title: '',
@@ -59,6 +67,7 @@ export default function AdminDashboardPage() {
   const [formData, setFormData] = useState<EmployeeFormState>(emptyEmployee);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -70,7 +79,19 @@ export default function AdminDashboardPage() {
     }
 
     fetchEmployees(token, companyId);
+    fetchSubscription(token);
   }, []);
+
+  const fetchSubscription = async (token: string) => {
+    try {
+      const response = await axios.get('/api/proxy?path=/api/subscriptions/current', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setSubscription(response.data);
+    } catch (error) {
+      console.error('Failed to fetch subscription:', error);
+    }
+  };
 
   const fetchEmployees = async (token: string, companyId: string) => {
     try {
@@ -203,6 +224,12 @@ export default function AdminDashboardPage() {
           <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
           <div className="flex gap-3">
             <a
+              href="/company-admin/subscription"
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold"
+            >
+              💳 Subscription
+            </a>
+            <a
               href="/company-admin/settings"
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold"
             >
@@ -225,6 +252,64 @@ export default function AdminDashboardPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-12">
+        {/* Subscription Status Card */}
+        {subscription && (
+          <div className="mb-8 bg-white rounded-lg shadow-lg p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold mb-2">
+                  Current Plan: <span className="text-blue-600">{subscription.plan_name.charAt(0).toUpperCase() + subscription.plan_name.slice(1)}</span>
+                </h2>
+                <div className="flex items-center gap-4">
+                  <div>
+                    <span className="text-sm text-gray-600">Employees: </span>
+                    <span className="font-semibold">
+                      {subscription.current_employee_count} / {subscription.employee_limit === -1 ? '∞' : subscription.employee_limit}
+                    </span>
+                  </div>
+                  {subscription.employee_limit !== -1 && (
+                    <div className="flex-1 max-w-xs">
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full ${
+                            (subscription.current_employee_count / subscription.employee_limit) * 100 >= 90
+                              ? 'bg-red-500'
+                              : (subscription.current_employee_count / subscription.employee_limit) * 100 >= 70
+                              ? 'bg-yellow-500'
+                              : 'bg-green-500'
+                          }`}
+                          style={{
+                            width: `${Math.min((subscription.current_employee_count / subscription.employee_limit) * 100, 100)}%`
+                          }}
+                        ></div>
+                      </div>
+                    </div>
+                  )}
+                  {subscription.trial_end && new Date(subscription.trial_end) > new Date() && (
+                    <span className="px-3 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded-full">
+                      Trial Active
+                    </span>
+                  )}
+                </div>
+                {subscription.employee_limit !== -1 && 
+                 subscription.current_employee_count >= subscription.employee_limit && (
+                  <p className="mt-3 text-sm text-red-600 font-semibold">
+                    ⚠️ You've reached your employee limit. Upgrade your plan to add more employees.
+                  </p>
+                )}
+              </div>
+              {subscription.plan_name !== 'enterprise' && (
+                <a
+                  href="/pricing"
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold"
+                >
+                  Upgrade Plan
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Success/Error Messages */}
         {success && (
           <div className="mb-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded-lg">
@@ -243,9 +328,16 @@ export default function AdminDashboardPage() {
             <button
               onClick={() => handleOpenForm()}
               className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold"
+              disabled={subscription && subscription.employee_limit !== -1 && subscription.current_employee_count >= subscription.employee_limit}
             >
               + Add Employee
             </button>
+            {subscription && subscription.employee_limit !== -1 && subscription.current_employee_count >= subscription.employee_limit && (
+              <span className="ml-3 text-sm text-red-600">
+                Upgrade your plan to add more employees
+              </span>
+            )}
+
           </div>
         )}
 

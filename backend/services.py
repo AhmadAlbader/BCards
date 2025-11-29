@@ -28,6 +28,11 @@ async def create_company(session: AsyncSession, company_data: models.CompanyCrea
     session.add(company)
     await session.commit()
     await session.refresh(company)
+    
+    # Create free subscription for new company
+    from subscription_service import create_free_subscription
+    await create_free_subscription(session, company.id)
+    
     return company
 
 
@@ -95,6 +100,10 @@ async def create_employee(
     employee_data: models.EmployeeCreate
 ) -> db.Employee:
     """Create a new employee."""
+    # Check subscription limits
+    from subscription_service import enforce_employee_limit
+    await enforce_employee_limit(session, company_id)
+    
     # Generate slug from name
     base_slug = slugify.slugify(employee_data.full_name)
     public_slug = f"{base_slug}-{str(uuid.uuid4())[:8]}"
