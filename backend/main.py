@@ -11,7 +11,6 @@ from routes import router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    print("🚀 Starting up... initializing database")
     await init_db()
     yield
     # Shutdown

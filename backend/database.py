@@ -4,16 +4,27 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from typing import AsyncGenerator
 
+# Get DATABASE_URL from environment and convert to asyncpg format
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql+asyncpg://user:password@localhost:5432/digital_cards"
 )
 
+# Railway provides postgres:// but we need postgresql+asyncpg://
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+print(f"🔗 Connecting to database: {DATABASE_URL.split('@')[1] if '@' in DATABASE_URL else 'localhost'}")
+
 engine = create_async_engine(
     DATABASE_URL,
-    echo=True,
+    echo=False,  # Set to False in production to reduce logs
     future=True,
     pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
 )
 
 AsyncSessionLocal = sessionmaker(
@@ -34,8 +45,10 @@ async def get_db() -> AsyncGenerator:
 
 async def init_db():
     """Create all database tables with retry logic."""
-    max_retries = 10
-    retry_delay = 2  # seconds
+    max_retries = 30  # Increased retries for Railway startup
+    retry_delay = 3  # seconds
+    
+    print("🚀 Starting up... initializing database")
     
     for attempt in range(max_retries):
         try:
@@ -50,6 +63,7 @@ async def init_db():
                 await asyncio.sleep(retry_delay)
             else:
                 print(f"❌ Failed to initialize database after {max_retries} attempts")
+                print(f"   Last error: {e}")
                 raise
 
 
